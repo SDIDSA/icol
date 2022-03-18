@@ -3,9 +3,7 @@ package icol;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +28,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
-import net.sf.image4j.codec.ico.ICOEncoder;
 
 public class Icol extends Application {
 	private static final int THN = 4;
@@ -230,6 +227,7 @@ public class Icol extends Application {
 					new Command("cmd", "/c", "start explorer").execute(File.listRoots()[0]);
 				} catch (InterruptedException e1) {
 					e1.printStackTrace();
+					Thread.currentThread().interrupt();
 				}
 
 				Platform.runLater(() -> {
