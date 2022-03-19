@@ -1,12 +1,15 @@
 package icol;
 
 import java.awt.Graphics2D;
+import java.awt.AlphaComposite;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 import javax.imageio.ImageIO;
 import javax.swing.Icon;
@@ -15,15 +18,13 @@ import javax.swing.filechooser.FileSystemView;
 
 import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
-import javafx.scene.image.PixelWriter;
-import javafx.scene.image.WritableImage;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -32,13 +33,14 @@ import javafx.stage.Stage;
 public class Icol extends Application {
 	private static final int THN = 4;
 
-	@SuppressWarnings("unchecked")
 	public void start(Stage ps) {
 		VBox root = new VBox(10);
 		root.setPadding(new Insets(10));
 
 		ColorPicker cp = new ColorPicker();
-		Button apply = new Button("apply");
+		Button applyB = new Button("apply");
+
+		CheckBox tint = new CheckBox("Tint");
 
 		HBox top = new HBox(10);
 
@@ -47,176 +49,47 @@ public class Icol extends Application {
 
 		pb.prefWidthProperty().bind(top.widthProperty());
 
-		apply.setOnAction(e -> {
+		applyB.setOnAction(e -> {
 			Color c = cp.getValue();
-			apply.setDisable(true);
-
-			ArrayList<Thread> ths = new ArrayList<>();
+			applyB.setDisable(true);
 
 			status.setText("Reading icons...");
 			new Thread(() -> {
+				List<DesktopIcon> nicons = getDesktopIcons();
 
-				List<DesktopIcon> icons = getDesktopIcons();
+				Platform.runLater(() -> status.setText("Coloring icons..."));
 
-				ArrayList<DesktopIcon> nicons = new ArrayList<>();
-				ths.clear();
-
-				ArrayList<DesktopIcon>[] tempsIco = new ArrayList[1];
-				tempsIco[0] = new ArrayList<>();
-
-				int[] colored = new int[] { 0 };
-				Platform.runLater(() -> {
-					status.setText("Coloring icons...");
-				});
-
-				icons.forEach(icon -> {
-					tempsIco[0].add(icon);
-
-					if (tempsIco[0].size() >= (icons.size() / THN)) {
-						final ArrayList<DesktopIcon> tempIco = tempsIco[0];
-						Thread th = new Thread(() -> {
-							tempIco.forEach(i -> {
-								colored[0]++;
-								Platform.runLater(() -> {
-									status.setText("Coloring icons " + colored[0] + "/" + icons.size());
-									pb.setProgress(colored[0] / (double) icons.size());
-								});
-								nicons.add(new DesktopIcon(i.link, colorize(i.icon, c), i.output));
-							});
-						});
-						ths.add(th);
-
-						tempsIco[0] = new ArrayList<>();
-					}
-				});
-
-				if (!tempsIco[0].isEmpty()) {
-					final ArrayList<DesktopIcon> tempIco = tempsIco[0];
-					Thread th = new Thread(() -> {
-						tempIco.forEach(i -> {
-							colored[0]++;
-							Platform.runLater(() -> {
-								status.setText("Coloring icons " + colored[0] + "/" + icons.size());
-								pb.setProgress(colored[0] / (double) icons.size());
-							});
-							nicons.add(new DesktopIcon(i.link, colorize(i.icon, c), i.output));
-						});
-					});
-					ths.add(th);
-				}
-
-				ths.forEach(Thread::start);
-				ths.forEach(t -> {
+				ThreadedTask<DesktopIcon> colorize = new ThreadedTask<>(nicons, ni -> {
 					try {
-						t.join();
-					} catch (InterruptedException e1) {
+						File preOut = new File(ni.output.getAbsolutePath().replace(".ico", ".png"));
+						ImageIO.write(ni.icon, "png", preOut);
+
+						File colorized = colorize(preOut, c, tint.isSelected());
+
+						new Command("cmd", "/c",
+								"magick \"" + colorized.getAbsolutePath()
+										+ "\" -define icon:auto-resize=256,128,96,70,64,48,32,16 \""
+										+ ni.output.getAbsolutePath() + "\"").execute(getMagick()).waitFor();
+					} catch (IOException e1) {
 						e1.printStackTrace();
-					}
-				});
-
-				ths.clear();
-
-				ArrayList<DesktopIcon>[] tempsNico = new ArrayList[1];
-				tempsNico[0] = new ArrayList<>();
-
-				int[] written = new int[] { 0 };
-				Platform.runLater(() -> {
-					status.setText("Writing icons...");
-				});
-
-				nicons.forEach(nicon -> {
-					tempsNico[0].add(nicon);
-
-					if (tempsNico[0].size() >= (nicons.size() / THN)) {
-						final ArrayList<DesktopIcon> tempNico = tempsNico[0];
-						Thread th = new Thread(() -> {
-							tempNico.forEach(ni -> {
-								written[0]++;
-								Platform.runLater(() -> {
-									status.setText("Writing icons " + written[0] + "/" + nicons.size());
-									pb.setProgress(written[0] / (double) nicons.size());
-								});
-								try {
-									File preOut = new File(ni.output.getAbsolutePath().replace(".ico", ".png"));
-									ImageIO.write(ni.icon, "png", preOut);
-
-									File magick = new File(
-											URLDecoder.decode(getClass().getResource("/magick.exe").getFile(), "utf-8"))
-													.getParentFile();
-
-									new Command("cmd", "/c",
-											"magick.exe \"" + preOut.getAbsolutePath()
-													+ "\" -define icon:auto-resize=256,128,96,70,64,48,32,16 \""
-													+ ni.output.getAbsolutePath() + "\"").execute(magick).waitFor();
-								} catch (IOException e1) {
-									e1.printStackTrace();
-								} catch (InterruptedException e1) {
-									e1.printStackTrace();
-									Thread.currentThread().interrupt();
-								}
-							});
-						});
-						ths.add(th);
-
-						tempsNico[0] = new ArrayList<>();
-					}
-				});
-
-				if (!tempsNico[0].isEmpty()) {
-					final ArrayList<DesktopIcon> tempNico = tempsNico[0];
-					Thread th = new Thread(() -> {
-						tempNico.forEach(ni -> {
-							written[0]++;
-							Platform.runLater(() -> {
-								status.setText("Writing icons " + written[0] + "/" + nicons.size());
-								pb.setProgress(written[0] / (double) nicons.size());
-							});
-							try {
-								File preOut = new File(ni.output.getAbsolutePath().replace(".ico", ".png"));
-								ImageIO.write(ni.icon, "png", preOut);
-
-								File magick = new File(
-										URLDecoder.decode(getClass().getResource("/magick.exe").getFile(), "utf-8"))
-												.getParentFile();
-
-								new Command("cmd", "/c",
-										"magick.exe \"" + preOut.getAbsolutePath()
-												+ "\" -define icon:auto-resize=256,128,96,70,64,48,32,16 \""
-												+ ni.output.getAbsolutePath() + "\"").execute(magick).waitFor();
-							} catch (IOException e1) {
-								e1.printStackTrace();
-							} catch (InterruptedException e1) {
-								e1.printStackTrace();
-								Thread.currentThread().interrupt();
-							}
-						});
-					});
-					ths.add(th);
-				}
-
-				ths.forEach(Thread::start);
-				ths.forEach(t -> {
-					try {
-						t.join();
 					} catch (InterruptedException e1) {
 						e1.printStackTrace();
 						Thread.currentThread().interrupt();
 					}
-				});
+				}, (pos, count) -> {
+					status.setText("Writing icons " + pos + "/" + count);
+					pb.setProgress(pos / (double) count);
+				}, THN);
+				colorize.execute();
 
-				Platform.runLater(() -> {
-					status.setText("Applying icons...");
-				});
-				int[] applied = new int[] { 0 };
+				Platform.runLater(() -> status.setText("Applying icons..."));
 
-				nicons.forEach(ni -> {
-					applied[0]++;
-					Platform.runLater(() -> {
-						status.setText("Applying icons " + applied[0] + "/" + nicons.size());
-						pb.setProgress(applied[0] / (double) nicons.size());
-					});
-					setIcon(ni.link, ni.output);
-				});
+				ThreadedTask<DesktopIcon> apply = new ThreadedTask<>(nicons, ni -> setIcon(ni.link, ni.output),
+						(pos, count) -> {
+							status.setText("Applying icons " + pos + "/" + count);
+							pb.setProgress(pos / (double) count);
+						}, THN);
+				apply.execute();
 
 				try {
 					new Command("cmd", "/c", "ie4uinit.exe -show").execute(File.listRoots()[0]).waitFor();
@@ -231,54 +104,79 @@ public class Icol extends Application {
 				}
 
 				Platform.runLater(() -> {
-					apply.setDisable(false);
+					applyB.setDisable(false);
 					status.setText("Done");
 					pb.setProgress(-1);
 				});
 			}).start();
 		});
 
-		top.getChildren().addAll(cp, apply);
+		top.getChildren().addAll(cp, applyB);
 
-		root.getChildren().addAll(top, pb, status);
+		root.getChildren().addAll(top, tint, pb, status);
 
 		ps.setScene(new Scene(root));
-		ps.setOnShown(e -> {
-			ps.sizeToScene();
-		});
 		ps.setTitle("iCol");
 		ps.show();
 	}
 
-	private static BufferedImage colorize(BufferedImage input, Color c) {
-		WritableImage img = new WritableImage(input.getWidth(), input.getHeight());
-		PixelWriter pw = img.getPixelWriter();
+	private static File getMagick() {
+		try {
+			return new File(URLDecoder.decode(Icol.class.getResource("/magick.exe").getFile(), "utf-8"))
+					.getParentFile();
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
 
-		for (int y = 0; y < img.getHeight(); y++) {
-			for (int x = 0; x < img.getWidth(); x++) {
-				int pixel = input.getRGB(x, y);
+	private static File colorize(File input, Color c, boolean tint) {
+		String name = input.getName();
+		String extension = name.substring(name.lastIndexOf("."));
+		name = name.substring(0, name.lastIndexOf("."));
 
-//				int blue = pixel & 0xFF;
-//				int green = (pixel >> 8) & 0xFF;
-//				int red = (pixel >> 16) & 0xFF;
-				int alpha = pixel >>> 24;
+		File output = new File(input.getParentFile().getAbsolutePath() + File.separator + name + "_tinted" + extension);
 
-//				float[] hsb = java.awt.Color.RGBtoHSB(red, green, blue, null);
+		if (tint) {
+			String colorHex = "#" + Integer.toHexString(c.hashCode());
 
-				pw.setColor(x, y, c.deriveColor(0, 1, 1, (alpha / 255.0)));
+			try {
+				new Command("cmd", "/c", "magick \"" + input.getAbsolutePath() + "\" -colorspace gray -fill " + colorHex
+						+ " -tint 100 \"" + output.getAbsolutePath() + "\"").execute(getMagick()).waitFor();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+				Thread.currentThread().interrupt();
+			}
+		} else {
+			try {
+				BufferedImage img = ImageIO.read(input);
+				int w = img.getWidth();
+				int h = img.getHeight();
+				BufferedImage dyed = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+				Graphics2D g = dyed.createGraphics();
+				g.drawImage(img, 0, 0, null);
+				g.setComposite(AlphaComposite.SrcAtop);
+				g.setColor(new java.awt.Color((float) c.getRed(), (float) c.getGreen(), (float) c.getBlue(),
+						(float) c.getOpacity()));
+				g.fillRect(0, 0, w, h);
+				g.dispose();
+				ImageIO.write(dyed, "png", output);
+			} catch (IOException e) {
+				e.printStackTrace();
 			}
 		}
 
-		return SwingFXUtils.fromFXImage(img, null);
+		return output;
+
 	}
 
+	private static Random r = new Random();
+
 	private static List<DesktopIcon> getDesktopIcons() {
-		// Find the desktop
 		File desktop = new File(System.getProperty("user.home") + "/Desktop");
 
 		ArrayList<File> links = new ArrayList<>();
 
-		// loop through the files in the desktop, store shortcuts in a List
 		for (File file : desktop.listFiles()) {
 			if (file.isFile()) {
 				String name = file.getName();
@@ -290,11 +188,9 @@ public class Icol extends Application {
 			}
 		}
 
-		File saveTo = new File(System.getProperty("java.io.tmpdir") + "/icol_icons_" + (int) (Math.random() * 999999));
+		File saveTo = new File(System.getProperty("java.io.tmpdir") + "/icol_icons_" + r.nextInt(9999999));
 		saveTo.mkdir();
 
-		// loop through the shortcuts, get their icons in different sizes
-		// 16 32 64 128 256
 		ArrayList<DesktopIcon> res = new ArrayList<>();
 		links.forEach(link -> {
 			String name = link.getName();
@@ -320,6 +216,9 @@ public class Icol extends Application {
 	}
 
 	private static void setIcon(File link, File icon) {
+		if (!icon.exists()) {
+			return;
+		}
 		String name = link.getName();
 		name = name.substring(0, name.lastIndexOf("."));
 		String script = "Const DESKTOP = &H10&\r\n" + "Set objShell = CreateObject(\"Shell.Application\")\r\n"
@@ -337,7 +236,18 @@ public class Icol extends Application {
 					.waitFor();
 		} catch (InterruptedException e) {
 			e.printStackTrace();
+			Thread.currentThread().interrupt();
 		}
+	}
+
+	private String format(double val) {
+		String in = Integer.toHexString((int) Math.round(val * 255));
+		return in.length() == 1 ? "0" + in : in;
+	}
+
+	public String toHexString(Color value) {
+		return "#" + (format(value.getRed()) + format(value.getGreen()) + format(value.getBlue())
+				+ format(value.getOpacity())).toUpperCase();
 	}
 
 	public static class DesktopIcon {
