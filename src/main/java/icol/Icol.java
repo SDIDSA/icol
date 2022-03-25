@@ -3,11 +3,17 @@ package icol;
 import java.awt.Graphics2D;
 import java.awt.AlphaComposite;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Random;
 
@@ -16,9 +22,12 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.filechooser.FileSystemView;
 
+import org.json.JSONObject;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -26,11 +35,16 @@ import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.stage.FileChooser;
+import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
 
 public class Icol extends Application {
+
 	private static final int THN = 4;
 
 	public void start(Stage ps) {
@@ -40,7 +54,13 @@ public class Icol extends Application {
 		ColorPicker cp = new ColorPicker();
 		Button applyB = new Button("apply");
 
+		Button backup = new Button("backup");
+		Button restore = new Button("restore");
 		CheckBox tint = new CheckBox("Tint");
+		HBox mid = new HBox(tint, hSpace(), backup, restore);
+		mid.setAlignment(Pos.CENTER);
+
+		HBox.setMargin(backup, new Insets(0, 10, 0, 0));
 
 		HBox top = new HBox(10);
 
@@ -76,32 +96,13 @@ public class Icol extends Application {
 						e1.printStackTrace();
 						Thread.currentThread().interrupt();
 					}
+
+					setIcon(ni.link, ni.output);
 				}, (pos, count) -> {
 					status.setText("Writing icons " + pos + "/" + count);
 					pb.setProgress(pos / (double) count);
 				}, THN);
 				colorize.execute();
-
-				Platform.runLater(() -> status.setText("Applying icons..."));
-
-				ThreadedTask<DesktopIcon> apply = new ThreadedTask<>(nicons, ni -> setIcon(ni.link, ni.output),
-						(pos, count) -> {
-							status.setText("Applying icons " + pos + "/" + count);
-							pb.setProgress(pos / (double) count);
-						}, THN);
-				apply.execute();
-
-				try {
-					new Command("cmd", "/c", "ie4uinit.exe -show").execute(File.listRoots()[0]).waitFor();
-					new Command("cmd", "/c", "taskkill /IM explorer.exe /F").execute(File.listRoots()[0]).waitFor();
-					new Command("cmd", "/c",
-							"DEL /A /F /Q \"%localappdata%\\Microsoft\\Windows\\Explorer\\iconcache*\"")
-									.execute(File.listRoots()[0]).waitFor();
-					new Command("cmd", "/c", "start explorer").execute(File.listRoots()[0]);
-				} catch (InterruptedException e1) {
-					e1.printStackTrace();
-					Thread.currentThread().interrupt();
-				}
 
 				Platform.runLater(() -> {
 					applyB.setDisable(false);
@@ -111,9 +112,12 @@ public class Icol extends Application {
 			}).start();
 		});
 
+		backup.setOnAction(e -> backup(ps));
+		restore.setOnAction(e -> restore(ps, status, pb));
+
 		top.getChildren().addAll(cp, applyB);
 
-		root.getChildren().addAll(top, tint, pb, status);
+		root.getChildren().addAll(top, mid, pb, status);
 
 		ps.setScene(new Scene(root));
 		ps.setTitle("iCol");
@@ -167,26 +171,17 @@ public class Icol extends Application {
 		}
 
 		return output;
-
 	}
 
 	private static Random r = new Random();
 
-	private static List<DesktopIcon> getDesktopIcons() {
+	private static List<File> getDesktopLinks() {
 		File desktop = new File(System.getProperty("user.home") + "/Desktop");
+		return Arrays.asList(desktop.listFiles((file, name) -> name.endsWith(".lnk")));
+	}
 
-		ArrayList<File> links = new ArrayList<>();
-
-		for (File file : desktop.listFiles()) {
-			if (file.isFile()) {
-				String name = file.getName();
-				String extension = name.substring(name.lastIndexOf(".") + 1);
-
-				if (extension.equalsIgnoreCase("lnk")) {
-					links.add(file);
-				}
-			}
-		}
+	private static List<DesktopIcon> getDesktopIcons() {
+		List<File> links = getDesktopLinks();
 
 		File saveTo = new File(System.getProperty("java.io.tmpdir") + "/icol_icons_" + r.nextInt(9999999));
 		saveTo.mkdir();
@@ -240,6 +235,89 @@ public class Icol extends Application {
 		}
 	}
 
+	private static void backup(Stage ps) {
+		FileChooser fc = new FileChooser();
+		fc.getExtensionFilters().add(new ExtensionFilter("Desktop Icons Backup", "*.dib"));
+		File saveTo = fc.showSaveDialog(ps);
+		if (saveTo != null) {
+			backup(saveTo);
+		}
+	}
+
+	private static void restore(Stage ps, Label status, ProgressBar pb) {
+		FileChooser fc = new FileChooser();
+		fc.getExtensionFilters().add(new ExtensionFilter("Desktop Icons Backup", "*.dib"));
+		File saveTo = fc.showOpenDialog(ps);
+		if (saveTo != null) {
+			restore(saveTo, status, pb);
+		}
+	}
+
+	private static void backup(File file) {
+		JSONObject obj = new JSONObject();
+		getDesktopIcons().forEach(icon -> {
+			String name = icon.link.getName();
+			name = name.substring(0, name.lastIndexOf("."));
+			obj.put(name, imgToBase64String(icon.icon, "png"));
+		});
+		FileDealer.write(obj.toString(), file);
+	}
+
+	private static void restore(File file, Label status, ProgressBar pb) {
+		JSONObject obj = new JSONObject(FileDealer.read(file));
+
+		File saveTo = new File(System.getProperty("java.io.tmpdir") + "/icol_icons_" + r.nextInt(9999999));
+		saveTo.mkdir();
+
+		ArrayList<DesktopIcon> icons = new ArrayList<>();
+
+		getDesktopLinks().forEach(link -> {
+			String name = link.getName();
+			name = name.substring(0, name.lastIndexOf("."));
+			if (obj.has(name) && !obj.isNull(name)) {
+				String val = obj.getString(name);
+				BufferedImage img = base64StringToImg(val);
+
+				File iconFile = new File(saveTo.getAbsolutePath().concat("/").concat(name).concat(".ico"));
+
+				icons.add(new DesktopIcon(link, img, iconFile));
+			}
+		});
+
+		Platform.runLater(() -> status.setText("Coloring icons..."));
+
+		ThreadedTask<DesktopIcon> colorize = new ThreadedTask<>(icons, ni -> {
+			try {
+				File preOut = new File(ni.output.getAbsolutePath().replace(".ico", ".png"));
+				ImageIO.write(ni.icon, "png", preOut);
+
+				new Command("cmd", "/c",
+						"magick \"" + preOut.getAbsolutePath()
+								+ "\" -define icon:auto-resize=256,128,96,70,64,48,32,16 \""
+								+ ni.output.getAbsolutePath() + "\"").execute(getMagick()).waitFor();
+			} catch (IOException e1) {
+				e1.printStackTrace();
+			} catch (InterruptedException e1) {
+				e1.printStackTrace();
+				Thread.currentThread().interrupt();
+			}
+
+			setIcon(ni.link, ni.output);
+		}, (pos, count) -> {
+			status.setText("Writing icons " + pos + "/" + count);
+			pb.setProgress(pos / (double) count);
+		}, THN);
+
+		new Thread(() -> {
+			colorize.execute();
+
+			Platform.runLater(() -> {
+				status.setText("Done");
+				pb.setProgress(-1);
+			});
+		}).start();
+	}
+
 	private String format(double val) {
 		String in = Integer.toHexString((int) Math.round(val * 255));
 		return in.length() == 1 ? "0" + in : in;
@@ -248,6 +326,30 @@ public class Icol extends Application {
 	public String toHexString(Color value) {
 		return "#" + (format(value.getRed()) + format(value.getGreen()) + format(value.getBlue())
 				+ format(value.getOpacity())).toUpperCase();
+	}
+
+	public static String imgToBase64String(final BufferedImage img, final String formatName) {
+		final ByteArrayOutputStream os = new ByteArrayOutputStream();
+		try (final OutputStream b64os = Base64.getEncoder().wrap(os)) {
+			ImageIO.write(img, formatName, b64os);
+		} catch (final IOException ioe) {
+			throw new UncheckedIOException(ioe);
+		}
+		return os.toString();
+	}
+
+	public static BufferedImage base64StringToImg(final String base64String) {
+		try {
+			return ImageIO.read(new ByteArrayInputStream(Base64.getDecoder().decode(base64String)));
+		} catch (final IOException ioe) {
+			throw new UncheckedIOException(ioe);
+		}
+	}
+
+	private static Pane hSpace() {
+		Pane space = new Pane();
+		HBox.setHgrow(space, Priority.ALWAYS);
+		return space;
 	}
 
 	public static class DesktopIcon {
