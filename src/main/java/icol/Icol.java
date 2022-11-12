@@ -1,7 +1,12 @@
 package icol;
 
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.Robot;
+import java.awt.Toolkit;
+import java.awt.AWTException;
 import java.awt.AlphaComposite;
+import java.awt.Dimension;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,36 +31,149 @@ import org.json.JSONObject;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.Border;
+import javafx.scene.layout.BorderStroke;
+import javafx.scene.layout.BorderStrokeStyle;
+import javafx.scene.layout.BorderWidths;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Line;
 import javafx.stage.FileChooser;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 public class Icol extends Application {
 
 	private static final int THN = 4;
 
-	public void start(Stage ps) {
+	public void start(Stage ps) throws AWTException {
 		VBox root = new VBox(10);
 		root.setPadding(new Insets(10));
 
 		ColorPicker cp = new ColorPicker();
+		Button pick = new Button("pick");
+
+		Stage picker = new Stage(StageStyle.TRANSPARENT);
+		picker.setAlwaysOnTop(true);
+		ImageView view = new ImageView();
+		ImageView preview = new ImageView();
+
+		javafx.scene.shape.Rectangle disp = new javafx.scene.shape.Rectangle();
+		disp.setEffect(new DropShadow());
+		disp.setStroke(Color.BLACK);
+		disp.setStrokeWidth(1);
+
+		StackPane preDisp = new StackPane(disp);
+		preDisp.setPadding(new Insets(10));
+		preDisp.setAlignment(Pos.BOTTOM_RIGHT);
+
+		Line hor = new Line();
+		Line ver = new Line();
+
+		StackPane prePrev = new StackPane(preview, hor, ver, preDisp);
+		prePrev.setEffect(new DropShadow());
+		prePrev.setMouseTransparent(true);
+		prePrev.setBorder(
+				new Border(new BorderStroke(Color.BLACK, BorderStrokeStyle.SOLID, null, new BorderWidths(1))));
+
+		disp.widthProperty().bind(prePrev.widthProperty().divide(3));
+		disp.heightProperty().bind(prePrev.heightProperty().divide(3));
+		preview.fitWidthProperty().bind(prePrev.widthProperty());
+		preview.fitHeightProperty().bind(prePrev.heightProperty());
+		preview.setSmooth(false);
+
+		hor.setStartX(0);
+		hor.endXProperty().bind(prePrev.widthProperty());
+		hor.startYProperty().bind(prePrev.heightProperty().divide(2));
+		hor.endYProperty().bind(prePrev.heightProperty().divide(2));
+
+		ver.setStartY(0);
+		ver.endYProperty().bind(prePrev.heightProperty());
+		ver.startXProperty().bind(prePrev.widthProperty().divide(2));
+		ver.endXProperty().bind(prePrev.widthProperty().divide(2));
+
+		hor.setStroke(Color.BLACK);
+
+		StackPane pickroot = new StackPane(view, prePrev);
+		pickroot.setAlignment(Pos.TOP_LEFT);
+
+		Scene scene = new Scene(new StackPane(pickroot));
+		scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+			if (e.getCode().equals(KeyCode.ESCAPE)) {
+				picker.close();
+			}
+		});
+		picker.setScene(scene);
+
+		view.setOnMouseMoved(e -> {
+			Color col = view.getImage().getPixelReader().getColor((int) e.getX(), (int) e.getY());
+			disp.setFill(col);
+
+			int dispSize = (int) (prePrev.getWidth() / 2);
+
+			prePrev.setTranslateX(e.getX() - dispSize);
+			prePrev.setTranslateY(e.getY() + 30);
+
+			int minX = (int) (e.getX() - dispSize / 2.0);
+			int minY = (int) (e.getY() - dispSize / 2.0);
+			preview.setViewport(new Rectangle2D(minX, minY, dispSize, dispSize));
+		});
+
+		view.setOnMouseClicked(e -> {
+			picker.close();
+			cp.setValue((Color) disp.getFill());
+		});
+
+		Robot robot = new Robot();
+		pick.setOnAction(e -> {
+			Dimension size = Toolkit.getDefaultToolkit().getScreenSize();
+			BufferedImage capture = robot.createScreenCapture(new Rectangle(size));
+
+			picker.setWidth(size.getWidth());
+			picker.setHeight(size.getHeight());
+
+			picker.setX(0);
+			picker.setY(0);
+
+			double prs = size.getHeight() / 5;
+			prePrev.setMinSize(prs, prs);
+			prePrev.setPrefSize(prs, prs);
+			prePrev.setMaxSize(prs, prs);
+
+			disp.setFill(Color.PINK);
+
+			Image img = SwingFXUtils.toFXImage(capture, null);
+			view.setImage(img);
+			preview.setImage(img);
+
+			picker.show();
+		});
+
 		Button applyB = new Button("apply");
 
 		Button backup = new Button("backup");
 		Button restore = new Button("restore");
+
 		CheckBox tint = new CheckBox("Tint");
 		HBox mid = new HBox(tint, hSpace(), backup, restore);
 		mid.setAlignment(Pos.CENTER);
@@ -89,7 +207,8 @@ public class Icol extends Application {
 						new Command("cmd", "/c",
 								"magick \"" + colorized.getAbsolutePath()
 										+ "\" -define icon:auto-resize=256,128,96,70,64,48,32,16 \""
-										+ ni.output.getAbsolutePath() + "\"").execute(getMagick()).waitFor();
+										+ ni.output.getAbsolutePath() + "\"")
+								.execute(getMagick()).waitFor();
 					} catch (IOException e1) {
 						e1.printStackTrace();
 					} catch (InterruptedException e1) {
@@ -115,10 +234,11 @@ public class Icol extends Application {
 		backup.setOnAction(e -> backup(ps));
 		restore.setOnAction(e -> restore(ps, status, pb));
 
-		top.getChildren().addAll(cp, applyB);
+		top.getChildren().addAll(cp, pick, applyB);
 
 		root.getChildren().addAll(top, mid, pb, status);
 
+		ps.setResizable(false);
 		ps.setScene(new Scene(root));
 		ps.setTitle("iCol");
 		ps.show();
@@ -294,7 +414,8 @@ public class Icol extends Application {
 				new Command("cmd", "/c",
 						"magick \"" + preOut.getAbsolutePath()
 								+ "\" -define icon:auto-resize=256,128,96,70,64,48,32,16 \""
-								+ ni.output.getAbsolutePath() + "\"").execute(getMagick()).waitFor();
+								+ ni.output.getAbsolutePath() + "\"")
+						.execute(getMagick()).waitFor();
 			} catch (IOException e1) {
 				e1.printStackTrace();
 			} catch (InterruptedException e1) {
