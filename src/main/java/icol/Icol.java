@@ -69,6 +69,10 @@ public class Icol extends Application {
 	public void start(Stage ps) throws AWTException {
 		VBox root = new VBox(10);
 		root.setPadding(new Insets(10));
+		
+		for(int i = 1; i <= 6; i++) {
+			ps.getIcons().add(new Image(Icol.class.getResourceAsStream("/icon-"+i+".png")));
+		}
 
 		ColorPicker cp = new ColorPicker();
 		Button pick = new Button("pick");
