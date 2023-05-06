@@ -64,7 +64,7 @@ import javafx.stage.StageStyle;
 
 public class Icol extends Application {
 
-	private static final int THN = 4;
+	private static final int THN = 8;
 
 	public void start(Stage ps) throws AWTException {
 		VBox root = new VBox(10);
@@ -262,7 +262,7 @@ public class Icol extends Application {
 		File output = new File(input.getParentFile().getAbsolutePath() + File.separator + name + "_tinted" + extension);
 
 		if (tint) {
-			String colorHex = "#" + Integer.toHexString(c.hashCode());
+			String colorHex = toHexString(c);
 
 			try {
 				new Command("cmd", "/c", "magick \"" + input.getAbsolutePath() + "\" -colorspace gray -fill " + colorHex
@@ -297,7 +297,17 @@ public class Icol extends Application {
 
 	private static List<File> getDesktopLinks() {
 		File desktop = new File(System.getProperty("user.home") + "/Desktop");
-		return Arrays.asList(desktop.listFiles((file, name) -> name.endsWith(".lnk")));
+		File pesktop = new File("C:\\Users\\Public\\Desktop");
+		List<File> links = Arrays.asList(desktop.listFiles((file, name) -> {
+			return name.endsWith(".lnk") || name.endsWith(".url");
+		}));
+		List<File> pinks = Arrays.asList(pesktop.listFiles((file, name) -> {
+			return name.endsWith(".lnk") || name.endsWith(".url");
+		}));
+
+		ArrayList<File> all = new ArrayList<>(links);
+		all.addAll(pinks);
+		return all;
 	}
 
 	private static List<DesktopIcon> getDesktopIcons() {
@@ -336,11 +346,20 @@ public class Icol extends Application {
 		}
 		String name = link.getName();
 		name = name.substring(0, name.lastIndexOf("."));
-		String script = "Const DESKTOP = &H10&\r\n" + "Set objShell = CreateObject(\"Shell.Application\")\r\n"
-				+ "Set objFolder = objShell.NameSpace(DESKTOP)\r\n" + "Set objFolderItem = objFolder.ParseName(\""
+		String desktop = link.getAbsolutePath().toLowerCase().contains("public") ?
+				"Dim obj, path\r\n"
+				+ "Set obj = createobject(\"wscript.shell\")\r\n"
+				+ "path = obj.specialfolders(\"AllUsersDesktop\")\r\n"
+				+ "Set objShell = CreateObject(\"Shell.Application\")\r\n"
+				+ "Set objFolder = objShell.NameSpace(path)" : 
+					"Const DESKTOP = &H10&\r\n"
+					+ "Set objFolder = objShell.NameSpace(DESKTOP)";
+		String script =  "Set objShell = CreateObject(\"Shell.Application\")\r\n" + desktop + "\r\n"
+				+ "Set objFolderItem = objFolder.ParseName(\""
 				+ link.getName() + "\")\r\n" + "Set objShortcut = objFolderItem.GetLink\r\n"
 				+ "objShortcut.SetIconLocation \"" + icon.getAbsolutePath() + "\", 0\r\n" + "objShortcut.Save";
 
+		System.out.println(script);
 		File scriptFile = new File(
 				icon.getParentFile().getAbsolutePath().concat("/").concat(name + "_vbscript").concat(".vbs"));
 
@@ -439,12 +458,12 @@ public class Icol extends Application {
 		}).start();
 	}
 
-	private String format(double val) {
+	private static String format(double val) {
 		String in = Integer.toHexString((int) Math.round(val * 255));
 		return in.length() == 1 ? "0" + in : in;
 	}
 
-	public String toHexString(Color value) {
+	public static String toHexString(Color value) {
 		return "#" + (format(value.getRed()) + format(value.getGreen()) + format(value.getBlue())
 				+ format(value.getOpacity())).toUpperCase();
 	}
