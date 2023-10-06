@@ -300,7 +300,7 @@ public class Icol extends Application {
 	private static Random r = new Random();
 
 	private static List<File> getDesktopLinks() {
-		File desktop = new File(System.getProperty("user.home") + "/Desktop");
+		File desktop = FileSystemView.getFileSystemView().getHomeDirectory();
 		File pesktop = new File("C:\\Users\\Public\\Desktop");
 		List<File> links = Arrays.asList(desktop.listFiles((file, name) -> {
 			return name.endsWith(".lnk") || name.endsWith(".url");
@@ -414,6 +414,8 @@ public class Icol extends Application {
 
 		ArrayList<DesktopIcon> icons = new ArrayList<>();
 
+		System.out.println(getDesktopLinks());
+		
 		getDesktopLinks().forEach(link -> {
 			String name = link.getName();
 			name = name.substring(0, name.lastIndexOf("."));
