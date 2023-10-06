@@ -413,8 +413,6 @@ public class Icol extends Application {
 		saveTo.mkdir();
 
 		ArrayList<DesktopIcon> icons = new ArrayList<>();
-
-		System.out.println(getDesktopLinks());
 		
 		getDesktopLinks().forEach(link -> {
 			String name = link.getName();
