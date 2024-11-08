@@ -171,22 +171,19 @@ public class App extends Application {
 
         pick.setOnAction(_ -> pickColor.run());
         backup.setOnAction(_ -> Backup.backup(ps, status, pb));
-        restore.setOnAction(_ -> {
-            Backup.restore(ps, status, pb);
-        });
-        applyB.setOnAction(_ -> {
-            Desktop.getDesktopIcons(status, pb, icons -> {
-                Platform.runLater(() -> status.setText("Coloring icons..."));
-                for(int i = 0; i < icons.size(); i++) {
-                    int finalI = i;
-                    Platform.runLater(() -> pb.setProgress((double) finalI / icons.size()));
-                    Colorize.apply(icons.get(i), cp.getValue(), tint.isSelected());
-                }
+        restore.setOnAction(_ -> Backup.restore(ps, status, pb));
+        applyB.setOnAction(_ ->
+                Desktop.getDesktopIcons(status, pb, icons -> {
+                    Platform.runLater(() -> status.setText("Coloring icons..."));
+                    for(int i = 0; i < icons.size(); i++) {
+                        int finalI = i;
+                        Platform.runLater(() -> pb.setProgress((double) finalI / icons.size()));
+                        Colorize.apply(icons.get(i), cp.getValue(), tint.isSelected());
+                    }
 
-                Platform.runLater(() -> status.setText("Done"));
-                Platform.runLater(() -> pb.setProgress(-1));
-            });
-        });
+                    Platform.runLater(() -> status.setText("Done"));
+                    Platform.runLater(() -> pb.setProgress(-1));
+                }));
     }
 
     private static Pane hSpace() {

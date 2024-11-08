@@ -72,15 +72,6 @@ public class ShellImageExtractor {
         return command;
     }
 
-    // Utility method to get default output path
-    private static String getDefaultOutputPath(String inputPath, String format) {
-        Path path = Paths.get(inputPath);
-        String fileName = path.getFileName().toString();
-        int dotIndex = fileName.lastIndexOf('.');
-        String baseName = (dotIndex != -1) ? fileName.substring(0, dotIndex) : fileName;
-        return path.getParent().resolve(baseName + "_icon." + (format != null ? format : "png")).toString();
-    }
-
     private static ShellImageExtractor extractor;
     public static BufferedImage getIcon(File file) {
         if(extractor == null) {
@@ -98,7 +89,7 @@ public class ShellImageExtractor {
             if(extractor.extractIcon(options)) {
                 tem.deleteOnExit();
                 ResampleOp resizeOp = new ResampleOp(256, 256);
-                resizeOp.setFilter(ResampleFilters.getBiCubicHighFreqResponse());
+                resizeOp.setFilter(ResampleFilters.getLanczos3Filter());
                 return resizeOp.filter(Objects.requireNonNull(cropTransparency(ImageIO.read(tem))), null);
             }
             return null;
@@ -109,38 +100,12 @@ public class ShellImageExtractor {
     }
 
     public static BufferedImage cropTransparency(BufferedImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
+        BufferedImage cropped = ImageCropper.cropTransparency(image);
 
-        int top = height, left = width, bottom = 0, right = 0;
-
-        int pre = width / 10;
-        for (int y = pre; y < height - pre; y++) {
-            for (int x = pre; x < width - pre; x++) {
-                int pixel = image.getRGB(x, y);
-                if ((pixel >> 24) != 0x00) {  // If not fully transparent
-                    if (x < left) left = x;
-                    if (x > right) right = x;
-                    if (y < top) top = y;
-                    if (y > bottom) bottom = y;
-                }
-            }
-        }
-        int pad = Math.min(top, left);
-        int size = Math.max(right, bottom);
-        if(pad <= pre) {
-            pad = 0;
-            size = height - 1;
-        }else {
-            pad-=5;
-            size+=5;
-        }
-
-        if (top > bottom || left > right) {
-            return null;
-        }
-
-        return image.getSubimage(pad, pad, size - pad + 1, size - pad + 1);
+        int exPad = 1;
+        BufferedImage img = new BufferedImage(cropped.getWidth() + exPad * 2, cropped.getHeight() + exPad * 2, cropped.getType());
+        img.getGraphics().drawImage(cropped, exPad, exPad, null);
+        return img;
     }
 
 }
